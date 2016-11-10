@@ -4,7 +4,89 @@ import numpy as np
 from datetime import datetime
 from scipy.stats import norm
 from scipy.optimize import minimize
+from sklearn.preprocessing import normalize
 
+def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data):
+    """
+    A function to find the maximum of the acquisition functions using
+    Hedge algorithm and the 'L-BFGS-B' method.
+
+    Parameters
+    ----------
+    :param acqs:
+        A dictionary of acquisition functions to use.
+
+    :param gains:
+        The current gains of the acquisition functions.
+
+    :param eta:
+        The learning rate of Hedge algorithm.
+
+    :param gp:
+        A gaussian process fitted to the relevant data.
+
+    :param y_max:
+        The current maximum known value of the target function.
+
+    :param bounds:
+        The variables bounds to limit the search of the acq max.
+
+    :param data:
+        The unobserved data to limit the search of the acq max.
+
+    Returns
+    -------
+    :return: x_max, The arg max of the acquisition functions.
+    """
+
+    print("Gain", gains)
+
+    # Initialize results
+    x_max = {}
+    max_acq = {}
+    for key in acqs.keys():
+        x_max[key] = None
+        max_acq[key] = None
+
+    # Random sampling from the given unobserved data
+    x_tries = data[np.random.choice(data.shape[0], 100, replace=False), :]
+
+    # Placeholder for acquisition function
+    ac = None
+
+    # For each of the acquisition function, find a minimum candidate
+    for key in acqs:
+        ac = acqs[key].utility
+        for x_try in x_tries:
+            # Find the minimum candidate of each of the acquisition candidate
+            res = minimize(lambda x: -ac(x.reshape(1, -1), gp=gp, y_max=y_max),
+                           x_try.reshape(1, -1),
+                           bounds=bounds,
+                           method="L-BFGS-B")
+
+            # Store it if better than previous minimum(maximum).
+            if max_acq[key] is None or -res.fun >= max_acq[key]:
+                x_max[key] = res.x
+                max_acq[key] = -res.fun
+
+    # Calculate the probability of picking the candidate of each function
+    prob_dict = {}
+    for key in gains:
+        prob_dict[key] = np.exp(eta * gains[key])
+
+    # Randomly pick a candidate result based on the gains
+    keys = [*gains]
+    probs = np.array([prob_dict[k] for k in keys])
+    sum_probs = np.sum(probs)
+    probs = probs / sum_probs
+    print(probs)
+    p = probs
+    # Pick the chosen acquisition function
+    arg_max = np.random.choice(keys, 1, replace=False, p=p)[0]
+
+    # Clip output to make sure it lies within the bounds. Due to floating
+    # point technicalities this is not always the case.
+    return np.clip(x_max[arg_max], bounds[:, 0], bounds[:, 1]), arg_max
 
 def acq_max(ac, gp, y_max, bounds):
     """

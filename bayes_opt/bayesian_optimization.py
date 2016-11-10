@@ -4,7 +4,7 @@ from __future__ import division
 import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern
-from .helpers import UtilityFunction, unique_rows, PrintLog, acq_max
+from .helpers import UtilityFunction, unique_rows, PrintLog, acq_max, acq_max_mixed
 __author__ = 'fmfn'
 
 
@@ -27,7 +27,7 @@ class BayesianOptimization(object):
         self.pbounds = pbounds
 
         # Get the name of the parameters
-        self.keys = list(pbounds.keys())
+        self.keys = list(sorted(pbounds.keys()))
 
         # Find number of parameters
         self.dim = len(pbounds)
@@ -48,6 +48,9 @@ class BayesianOptimization(object):
         self.init_points = []
         self.x_init = []
         self.y_init = []
+
+        # Initialize dataset to sample from
+        self.dataset = []
 
         # Numpy array place holders
         self.X = None
@@ -112,6 +115,64 @@ class BayesianOptimization(object):
 
         # Append the target value of self.initialize method.
         y_init += self.y_init
+
+        # Turn it into np array and store.
+        self.X = np.asarray(self.init_points)
+        self.Y = np.asarray(y_init)
+
+        # Updates the flag
+        self.initialized = True
+
+    def init_data(self, init_points, dataframe):
+        """
+        Initialize the GP with a number of initial points from the dataset
+
+        Parameters
+        ----------
+        :param init_points:
+            Number of randomly sampled from the dataset to sample the target
+            function before fitting the gp.
+
+        :param dataframe:
+            The dataframe to sample from.
+        """
+        # Save and process dataset such that each row is just data without
+        # identifiers ordered in the same way as self.keys()
+        for i in dataframe.index:
+            all_points = []
+            for key in self.keys:
+                all_points.append(dataframe.loc[i, key])
+
+            self.dataset.append(all_points)
+
+        self.dataset = np.asarray(self.dataset)
+
+        # Randomly sample from dataset
+        rnd_indices = np.random.choice(self.dataset.shape[0], init_points, replace=False)
+        samples = self.dataset[rnd_indices, :]
+
+        # Concatenate new random points to possible existing
+        # points from self.explore method.
+        self.init_points = samples
+
+        # Create empty list to store the new values of the function
+        y_init = []
+
+        # Evaluate target function at all initialization
+        # points (random + explore)
+        for x in self.init_points:
+
+            y_init.append(self.f(**dict(zip(self.keys, x))))
+
+            if self.verbose:
+                self.plog.print_step(x, y_init[-1])
+
+        # Append any other points passed by the self.initialize method (these
+        # also have a corresponding target value passed by the user).
+        # self.init_points += self.x_init
+
+        # Append the target value of self.initialize method.
+        # y_init += self.y_init
 
         # Turn it into np array and store.
         self.X = np.asarray(self.init_points)
@@ -211,6 +272,128 @@ class BayesianOptimization(object):
 
             # Reset all entries, even if the same.
             self.bounds[row] = self.pbounds[key]
+
+    def maximize_mixed(self, dataset, init_points=5, n_iter=25, \
+                       kappa=2.576, xi=0.0, eta=1.01, **gp_params):
+        """
+        Optimization method using mixed strategy of acquisition functions.
+
+        Parameters
+        ----------
+        :param init_points:
+            Number of randomly chosen points to sample the
+            target function before fitting the gp.
+
+        :param n_iter:
+            Total number of times the process is to repeated. Note that
+            currently this methods does not have stopping criteria (due to a
+            number of reasons), therefore the total number of points to be
+            sampled must be specified.
+
+        :param gp_params:
+            Parameters to be passed to the Scikit-learn Gaussian Process object
+
+        Returns
+        -------
+        :return: Nothing
+        """
+        # Reset timer
+        self.plog.reset_timer()
+
+        # Set initial gain for all acquisition functions
+        gains = {"ei": 0.0, "ucb": 0.0, "poi": 0.0}
+
+        # Set acquisition functions
+        acqs = {"ei": UtilityFunction(kind="ei", kappa=kappa, xi=xi), \
+                "ucb": UtilityFunction(kind="ucb", kappa=kappa, xi=xi), \
+                "poi": UtilityFunction(kind="poi", kappa=kappa, xi=xi)}
+
+        # Initialize x, y and find current y_max
+        if not self.initialized:
+            if self.verbose:
+                self.plog.print_header()
+            self.init_data(init_points, dataset)
+
+        y_max = self.Y.max()
+
+        # Set parameters if any was passed
+        self.gp.set_params(**gp_params)
+
+        # Find unique rows of X to avoid GP from breaking
+        ur = unique_rows(self.X)
+        self.gp.fit(self.X[ur], self.Y[ur])
+
+        # Finding argmax of the acquisition function using Hedge algorithm
+        x_max, ac = acq_max_mixed(acqs=acqs,
+                                  gains=gains,
+                                  eta=eta,
+                                  gp=self.gp,
+                                  y_max=y_max,
+                                  bounds=self.bounds,
+                                  data=self.dataset)
+
+        # Print new header
+        if self.verbose:
+            self.plog.print_header(initialization=False)
+        # Iterative process of searching for the maximum. At each round the
+        # most recent x and y values probed are added to the X and Y arrays
+        # used to train the Gaussian Process. Next the maximum known value
+        # of the target function is found and passed to the acq_max function.
+        # The arg_max of the acquisition function is found and this will be
+        # the next probed value of the target function in the next round.
+        for i in range(n_iter):
+            # Test if x_max is repeated, if it is, draw another one at random
+            # If it is repeated, print a warning
+            pwarning = False
+            # while np.any((self.X - x_max).sum(axis=1) == 0):
+            #     print("Repeated data. Sampling another one.")
+            #     x_max = np.random.choice(self.dataset, 1)
+
+            #     pwarning = True
+
+            # Append most recently generated values to X and Y arrays
+            self.X = np.vstack((self.X, x_max.reshape((1, -1))))
+            self.Y = np.append(self.Y, self.f(**dict(zip(self.keys, x_max))))
+
+            # Updating the GP.
+            ur = unique_rows(self.X)
+            self.gp.fit(self.X[ur], self.Y[ur])
+
+            # Receive reward from updated gp
+            reward = self.gp.predict(x_max.reshape(1, -1))[0]
+            print("Reward", reward)
+            gains[ac] += reward
+
+            # Update maximum value to search for next probe point.
+            if self.Y[-1] > y_max:
+                y_max = self.Y[-1]
+
+            # Maximize acquisition function to find next probing point
+            x_max, ac = acq_max_mixed(acqs=acqs,
+                                      gains=gains,
+                                      eta=eta,
+                                      gp=self.gp,
+                                      y_max=y_max,
+                                      bounds=self.bounds,
+                                      data=self.dataset)
+
+            # Print stuff
+            if self.verbose:
+                self.plog.print_step(self.X[-1], self.Y[-1], warning=pwarning)
+
+            # Keep track of total number of iterations
+            self.i += 1
+
+            self.res['max'] = {'max_val': self.Y.max(),
+                               'max_params': dict(zip(self.keys,
+                                                      self.X[self.Y.argmax()]))
+                              }
+            self.res['all']['values'].append(self.Y[-1])
+            self.res['all']['params'].append(dict(zip(self.keys, self.X[-1])))
+
+        # Print a final report if verbose active.
+        if self.verbose:
+            self.plog.print_summary()
 
     def maximize(self,
                  init_points=5,
