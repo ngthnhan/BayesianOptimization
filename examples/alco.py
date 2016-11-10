@@ -5,6 +5,16 @@ from sklearn.gaussian_process.kernels import Matern
 from bayes_opt import BayesianOptimization
 import pandas as pd
 import numpy as np
+"""
+Perform Bayesian Optimization on Student Alcohol Consumption dataset
+
+Usage
+-----
+python alco.py [<student_data.csv>]
+
+Output
+------
+"""
 
 def load_data(src):
     # Load student alcohol consumption data
@@ -86,5 +96,6 @@ class App(object):
         print(bo.res['all'])
 
 if __name__ == "__main__":
+    print(__doc__)
     App(sys.argv[1]).run()
 
