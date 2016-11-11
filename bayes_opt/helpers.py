@@ -6,22 +6,15 @@ from scipy.stats import norm
 from scipy.optimize import minimize
 from sklearn.preprocessing import normalize
 
-def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data=None):
+def acq_max_mixed(gp, y_max, bounds, data=None, acqs=None, gains=None, eta=0.1):
     """
     A function to find the maximum of the acquisition functions using
-    Hedge algorithm and the 'L-BFGS-B' method.
+    Hedge algorithm and the 'L-BFGS-B' method. 
+    To use only one particular acqs function, pass in a dictionary with 
+    one item.
 
     Parameters
     ----------
-    :param acqs:
-        A dictionary of acquisition functions to use.
-
-    :param gains:
-        The current gains of the acquisition functions.
-
-    :param eta:
-        The learning rate of Hedge algorithm.
-
     :param gp:
         A gaussian process fitted to the relevant data.
 
@@ -34,12 +27,19 @@ def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data=None):
     :param data:
         The unobserved data to limit the search of the acq max.
 
+    :param acqs:
+        A dictionary of acquisition functions to use.
+
+    :param gains:
+        The current gains of the acquisition functions.
+
+    :param eta:
+        The learning rate of Hedge algorithm.
+
     Returns
     -------
     :return: x_max, The arg max of the acquisition functions.
     """
-
-    print("Gain", gains)
 
     # Initialize results
     x_max = {}
@@ -50,9 +50,11 @@ def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data=None):
 
     # If there is no sampling data, choose random within bounds
     if data is None:
+        print("Data choice: Random from bounds.")
         x_tries = np.random.uniform(bounds[:, 0], bounds[:, 1],
                                     size=(100, bounds.shape[0]))
     else:
+        print("Data choice: Random sampling from data.")
         x_tries = data[np.random.choice(data.shape[0], 100, replace=False), :]
 
     # Placeholder for acquisition function
@@ -83,10 +85,13 @@ def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data=None):
     probs = np.array([prob_dict[k] for k in keys])
     sum_probs = np.sum(probs)
     probs = probs / sum_probs
+    
+    # Log
+    print("Gain", gains)
     print("Probs: ", probs)
-    p = probs
+    
     # Pick the chosen acquisition function based on the Hedge probability
-    arg_max = np.random.choice(keys, 1, replace=False, p=p)[0]
+    arg_max = np.random.choice(keys, 1, replace=False, p=probs)[0]
 
     # Clip output to make sure it lies within the bounds. Due to floating
     # point technicalities this is not always the case.

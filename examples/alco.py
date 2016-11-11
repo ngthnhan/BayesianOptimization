@@ -16,14 +16,6 @@ Output
 ------
 """
 
-def load_data(src):
-    # Load student alcohol consumption data
-    df = pd.read_csv(src, sep=';')
-    df.rename(columns={"G3": "target"}, inplace=True)
-    df_small = df[['G1', 'G2', 'absences', 'Dalc', 'Walc', 'freetime', 'goout', 'target']]
-    df_small.drop_duplicates(inplace=True)
-    return df_small
-
 def unique_rows(a):
     """
     A functions to trim repeated rows that may appear when optimizing.
@@ -47,21 +39,16 @@ def unique_rows(a):
 
 class App(object):
     def __init__(self, data_src):
-        # Prepare dataset
-        self.dataset = load_data(data_src)
-        self.keys = sorted(self.dataset.columns.values)
-        self.keys.remove('target')
+        self.data_src = data_src
+
+        # Prepare dataset placeholders
+        self.dataset = None
+        self.keys = None
 
         # Prepare a GP model to mimic the evaluation function
         self.gp = GaussianProcessRegressor(kernel=Matern(),
                                            n_restarts_optimizer=25,
                                            normalize_y=True)
-        X = np.asarray(self.dataset[[*self.keys]].values)
-        y = np.asarray(self.dataset['target'].values)
-
-        ur = unique_rows(X)
-
-        self.gp.fit(X[ur], y[ur])
 
     def eval(self, **kw_args):
         x = []
@@ -70,30 +57,55 @@ class App(object):
 
         miu = self.gp.predict(np.asarray(x).reshape(1, -1))[0]
         return miu
+    
+    def load_data(self, attrs):
+        # Load student alcohol consumption data
+        df = pd.read_csv(self.data_src, sep=';')
+        df.rename(columns={"G3": "target"}, inplace=True)
+        attrs += ['target']
+        df_small = df[attrs]
+        df_small.drop_duplicates(inplace=True)
+
+        # Prepare dataset
+        self.dataset = df_small
+        self.keys = sorted(self.dataset.columns.values)
+        self.keys.remove('target')
+
+    def initialize_objective(self):
+        """ Initialize objective function using a GP model. """
+
+        X = np.asarray(self.dataset[[*self.keys]].values)
+        y = np.asarray(self.dataset['target'].values)
+
+        ur = unique_rows(X)
+
+        self.gp.fit(X[ur], y[ur])
 
     def run(self):
-        # Create a BO object
-        bo = BayesianOptimization(self.eval,
-                                  {'G1': (0, 20),
-                                   'G2': (0, 20),
-                                   'absences': (0, 100),
-                                   'Dalc': (0, 5),
-                                   'Walc': (0, 5),
-                                   'freetime': (1, 5),
-                                   'goout': (1, 5)})
+        # Bounds for chosen attributes
+        pbounds = {'G1': (0, 20),
+                   'G2': (0, 20),
+                   'absences': (0, 93),
+                   'age': (15, 22),
+                   'Dalc': (0, 5),
+                   'Walc': (0, 5)}
 
-        # Get the input data without output
-        # data = self.dataset.drop(['target'], axis=1).to_dict('list')
+        # Create a BO object
+        bo_mixed = BayesianOptimization(self.eval, pbounds)
+
+        # Read data with the chosen attributes
+        self.load_data(list(pbounds.keys()))
+        self.initialize_objective()
 
         # Once we are satisfied with the initialization conditions
         # we let the algorithm do its magic by calling the maximize()
         # method.
-        # self, dataset, init_points=5, n_iter=25, kappa=2.576, xi=0.0, eta=1.01, **gp_params):
-        bo.maximize_mixed(self.dataset, init_points=5, n_iter=15, kappa=3.29, eta=0.0005)
+        # self, dataset=None, init_points=5, n_iter=25, acq="mixed", kappa=2.576, xi=0.0, eta=1.01, **gp_params
+        bo_mixed.maximize_mixed(self.dataset, init_points=5, n_iter=5, kappa=3.29, eta=0.0005)
 
         # The output values can be accessed with self.res
-        print(bo.res['max'])
-        print(bo.res['all'])
+        print(bo_mixed.res['max'])
+        print(bo_mixed.res['all'])
 
 if __name__ == "__main__":
     print(__doc__)

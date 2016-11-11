@@ -273,13 +273,16 @@ class BayesianOptimization(object):
             # Reset all entries, even if the same.
             self.bounds[row] = self.pbounds[key]
 
-    def maximize_mixed(self, dataset, init_points=5, n_iter=25, \
-                       kappa=2.576, xi=0.0, eta=1.01, **gp_params):
+    def maximize_mixed(self, dataset=None, init_points=5, n_iter=25, \
+                       acq="mixed", kappa=2.576, xi=0.0, eta=1.01, **gp_params):
         """
         Optimization method using mixed strategy of acquisition functions.
 
         Parameters
         ----------
+        :param dataset:
+            The dataset to sample from.
+
         :param init_points:
             Number of randomly chosen points to sample the
             target function before fitting the gp.
@@ -289,6 +292,10 @@ class BayesianOptimization(object):
             currently this methods does not have stopping criteria (due to a
             number of reasons), therefore the total number of points to be
             sampled must be specified.
+
+        :param acq:
+            The acquisition strategy to use from.
+            - str: "ei", "poi", "ucb", "mixed"
 
         :param gp_params:
             Parameters to be passed to the Scikit-learn Gaussian Process object
@@ -300,13 +307,19 @@ class BayesianOptimization(object):
         # Reset timer
         self.plog.reset_timer()
 
-        # Set initial gain for all acquisition functions
-        gains = {"ei": 0.0, "ucb": 0.0, "poi": 0.0}
+        # Initialize a mixed strategy of acquisition functions
+        if acq == "mixed":
+            # Set initial gains
+            gains = {"ei": 0.0, "ucb": 0.0, "poi": 0.0}
 
-        # Set acquisition functions
-        acqs = {"ei": UtilityFunction(kind="ei", kappa=kappa, xi=xi), \
-                "ucb": UtilityFunction(kind="ucb", kappa=kappa, xi=xi), \
-                "poi": UtilityFunction(kind="poi", kappa=kappa, xi=xi)}
+            # Set acquisition functions
+            acqs = {"ei": UtilityFunction(kind="ei", kappa=kappa, xi=xi), \
+                    "ucb": UtilityFunction(kind="ucb", kappa=kappa, xi=xi), \
+                    "poi": UtilityFunction(kind="poi", kappa=kappa, xi=xi)}
+        # Otherwise initialize a specific acquisition function
+        else:
+            gains = {acq: 0.0}
+            acqs = {acq: UtilityFunction(kind=acq, kappa=kappa, xi=xi)}
 
         # Initialize x, y and find current y_max
         if not self.initialized:
