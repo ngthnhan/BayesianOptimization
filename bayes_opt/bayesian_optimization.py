@@ -345,11 +345,11 @@ class BayesianOptimization(object):
             # Test if x_max is repeated, if it is, draw another one at random
             # If it is repeated, print a warning
             pwarning = False
-            # while np.any((self.X - x_max).sum(axis=1) == 0):
-            #     print("Repeated data. Sampling another one.")
-            #     x_max = np.random.choice(self.dataset, 1)
+            while np.any((self.X - x_max).sum(axis=1) == 0):
+                print("Repeated data. Sampling another one.")
+                x_max = self.dataset[np.random.choice(self.dataset.shape[0], 1), :]
 
-            #     pwarning = True
+                pwarning = True
 
             # Append most recently generated values to X and Y arrays
             self.X = np.vstack((self.X, x_max.reshape((1, -1))))

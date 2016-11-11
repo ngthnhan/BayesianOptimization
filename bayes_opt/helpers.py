@@ -6,7 +6,7 @@ from scipy.stats import norm
 from scipy.optimize import minimize
 from sklearn.preprocessing import normalize
 
-def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data):
+def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data=None):
     """
     A function to find the maximum of the acquisition functions using
     Hedge algorithm and the 'L-BFGS-B' method.
@@ -48,8 +48,12 @@ def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data):
         x_max[key] = None
         max_acq[key] = None
 
-    # Random sampling from the given unobserved data
-    x_tries = data[np.random.choice(data.shape[0], 100, replace=False), :]
+    # If there is no sampling data, choose random within bounds
+    if data is None:
+        x_tries = np.random.uniform(bounds[:, 0], bounds[:, 1],
+                                    size=(100, bounds.shape[0]))
+    else:
+        x_tries = data[np.random.choice(data.shape[0], 100, replace=False), :]
 
     # Placeholder for acquisition function
     ac = None
@@ -79,9 +83,9 @@ def acq_max_mixed(acqs, gains, eta, gp, y_max, bounds, data):
     probs = np.array([prob_dict[k] for k in keys])
     sum_probs = np.sum(probs)
     probs = probs / sum_probs
-    print(probs)
+    print("Probs: ", probs)
     p = probs
-    # Pick the chosen acquisition function
+    # Pick the chosen acquisition function based on the Hedge probability
     arg_max = np.random.choice(keys, 1, replace=False, p=p)[0]
 
     # Clip output to make sure it lies within the bounds. Due to floating
