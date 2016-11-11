@@ -161,7 +161,6 @@ class BayesianOptimization(object):
         # Evaluate target function at all initialization
         # points (random + explore)
         for x in self.init_points:
-
             y_init.append(self.f(**dict(zip(self.keys, x))))
 
             if self.verbose:
