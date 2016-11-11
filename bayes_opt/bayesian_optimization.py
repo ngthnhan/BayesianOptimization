@@ -272,8 +272,8 @@ class BayesianOptimization(object):
             # Reset all entries, even if the same.
             self.bounds[row] = self.pbounds[key]
 
-    def maximize_mixed(self, dataset=None, init_points=5, n_iter=25, \
-                       acq="mixed", kappa=2.576, xi=0.0, eta=1.01, **gp_params):
+    def maximize_mixed(self, dataset=None, init_points=0, n_iter=25, \
+                       acq="mixed", kappa=2.576, xi=0.1, eta=1.01, **gp_params):
         """
         Optimization method using mixed strategy of acquisition functions.
 

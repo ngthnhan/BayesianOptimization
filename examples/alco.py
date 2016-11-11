@@ -41,13 +41,14 @@ def unique_rows(a):
     return ui[reorder]
 
 class App(object):
-    def __init__(self, data, train=5, iterations=10, kappa=3.29, eta=0.0005):
+    def __init__(self, data, train=5, iterations=10, kappa=3.29, eta=0.0005, xi=0.1):
         # Save arguments
         self.data_src = data
         self.train = train
         self.iterations = iterations
         self.kappa = kappa
         self.eta = eta
+        self.xi = xi
 
         print(self.kappa)
 
@@ -111,15 +112,20 @@ class App(object):
         Parameters
         ----------
         :param profiles:
-            An dict of data points for each of the different strategy. 
+            A dict of data points for each of the different strategy. 
         """
 
         # Initialize axis
-        i = np.arange(self.iterations)
+        symbols = ['r', 'b', 'g', 'y', 'k']
+        i = np.arange(1, self.iterations + 1)
+        cnt = 0
+        for key, value in profiles.items():
+            val = value['all']['values']
+            plt.plot(i, val, symbols[cnt], label=key)
+            cnt += 1
 
-        values = profiles.values()
-        plt.figure()
-        plt.plot(i, values[0], 'r--', i, values[1], 'bs', i, values[2], 'g^')
+        plt.xlim((1, self.iterations))
+        plt.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0.)
         plt.show()
 
     def run(self):
@@ -147,7 +153,7 @@ class App(object):
         # Once we are satisfied with the initialization conditions
         # we let the algorithm do its magic by calling the maximize()
         # method.
-        bo_mixed.maximize_mixed(self.dataset, init_points=self.train, n_iter=self.iterations,
+        bo_mixed.maximize_mixed(self.dataset, n_iter=self.iterations, xi=self.xi,
                                 kappa=self.kappa, eta=self.eta)
 
         # The output values can be accessed with self.res
@@ -158,7 +164,7 @@ class App(object):
         print("--- Evaluating Bayesian Optimization using EI ---")
         bo_ei = BayesianOptimization(self.eval, pbounds)
         bo_ei.initialize_df(points_df)
-        bo_ei.maximize_mixed(self.dataset, init_points=self.train, n_iter=self.iterations, acq="ei")
+        bo_ei.maximize_mixed(self.dataset, n_iter=self.iterations, xi=self.xi, acq="ei")
         print(bo_ei.res['max'])
         print(bo_ei.res['all'])
 
@@ -166,7 +172,7 @@ class App(object):
         print("--- Evaluating Bayesian Optimization using POI ---")
         bo_poi = BayesianOptimization(self.eval, pbounds)
         bo_poi.initialize_df(points_df)
-        bo_poi.maximize_mixed(self.dataset, init_points=self.train, n_iter=self.iterations, acq="poi")
+        bo_poi.maximize_mixed(self.dataset, n_iter=self.iterations, xi=self.xi, acq="poi")
         print(bo_poi.res['max'])
         print(bo_poi.res['all'])
 
@@ -174,7 +180,7 @@ class App(object):
         print("--- Evaluating Bayesian Optimization using POI ---")
         bo_ucb = BayesianOptimization(self.eval, pbounds)
         bo_ucb.initialize_df(points_df)
-        bo_ucb.maximize_mixed(self.dataset, init_points=self.train, n_iter=self.iterations, acq="ucb", kappa=self.kappa)
+        bo_ucb.maximize_mixed(self.dataset, n_iter=self.iterations, acq="ucb", kappa=self.kappa)
         print(bo_ucb.res['max'])
         print(bo_ucb.res['all'])
 
@@ -184,14 +190,14 @@ class App(object):
         #             "poi": bo_poi.res['all']['values'],
         #             "ucb": bo_ucb.res['all']['values']}
 
-        profiles_full = {"mixed": bo_mixed.res,
+        self.profiles = {"mixed": bo_mixed.res,
                          "ei": bo_ei.res,
                          "poi": bo_poi.res,
                          "ucb": bo_ucb.res}
 
-        pickle.dump(profiles_full, open("profiles.p", "wb"))
-        print("Done pickling")
-        # self.plot_bos(profiles)
+        pickle.dump(self.profiles, open("profiles.p", "wb"))
+
+        self.plot_bos(self.profiles)
 
 if __name__ == "__main__":
     print(__doc__)
@@ -203,6 +209,15 @@ if __name__ == "__main__":
     ap.add_argument("-e", "--eta", type=float, help="float: learning rate for Hedge algorithm", default=0.005)
     ap.add_argument("-k", "--kappa", type=float, help="float: exploration/exploitation trade off for GP-UCB", default=3.29)
     ap.add_argument("-t", "--train", type=int, help="int: number of training data", default=5)
+    ap.add_argument("-x", "--xi", type=float, help="float: exploration/exploitation trade off for EI, POI", default=0.1)
     args = vars(ap.parse_args())
 
     App(**args).run()
+
+    # app = App(**args)
+    # profiles = pickle.load(open("profiles_1.p", "rb"))
+    # app.plot_bos(profiles)
+
+    # # Read the profiles data
+    # profiles = pickle.load(open("profiles_2.p", "rb"))
+    # app.plot_bos(profiles)
