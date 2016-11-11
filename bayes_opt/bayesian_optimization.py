@@ -153,7 +153,7 @@ class BayesianOptimization(object):
 
         # Concatenate new random points to possible existing
         # points from self.explore method.
-        self.init_points = samples
+        self.init_points += samples.tolist()
 
         # Create empty list to store the new values of the function
         y_init = []
@@ -168,10 +168,10 @@ class BayesianOptimization(object):
 
         # Append any other points passed by the self.initialize method (these
         # also have a corresponding target value passed by the user).
-        # self.init_points += self.x_init
+        self.init_points += self.x_init
 
         # Append the target value of self.initialize method.
-        # y_init += self.y_init
+        y_init += self.y_init
 
         # Turn it into np array and store.
         self.X = np.asarray(self.init_points)

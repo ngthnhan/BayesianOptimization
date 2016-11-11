@@ -1,4 +1,5 @@
 import sys
+import pickle
 sys.path.append("./")
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern
@@ -6,7 +7,7 @@ from bayes_opt import BayesianOptimization
 import pandas as pd
 import numpy as np
 import argparse
-
+import matplotlib.pyplot as plt
 """
 Perform Bayesian Optimization on Student Alcohol Consumption dataset
 
@@ -51,6 +52,7 @@ class App(object):
         print(self.kappa)
 
         # Prepare dataset placeholders
+        self.dataframe = None
         self.dataset = None
         self.keys = None
         self.X = None
@@ -87,6 +89,7 @@ class App(object):
         df_selected.drop_duplicates(inplace=True)
 
         # Prepare dataset
+        self.dataframe = df_selected
         self.dataset = df_selected[attrs]
         self.keys = sorted(self.dataset.columns.values)
 
@@ -101,6 +104,24 @@ class App(object):
 
         self.gp.fit(self.X[ur], self.y[ur])
 
+    def plot_bos(self, profiles):
+        """
+        Plot the graph for the means over number of iterations
+
+        Parameters
+        ----------
+        :param profiles:
+            An dict of data points for each of the different strategy. 
+        """
+
+        # Initialize axis
+        i = np.arange(self.iterations)
+
+        values = profiles.values()
+        plt.figure()
+        plt.plot(i, values[0], 'r--', i, values[1], 'bs', i, values[2], 'g^')
+        plt.show()
+
     def run(self):
         # Bounds for chosen attributes
         pbounds = {'G1': (0, 20),
@@ -114,9 +135,14 @@ class App(object):
         self.load_data(list(pbounds.keys()))
         self.initialize_objective()
 
+        # Randomly choose some training data
+        points_df = self.dataframe.sample(self.train)
+        print(points_df)
+
         # Create a BO object for mixed strategy
         print("--- Evaluating Bayesian Optimization using Mixed strategy ---")
         bo_mixed = BayesianOptimization(self.eval, pbounds)
+        bo_mixed.initialize_df(points_df)
 
         # Once we are satisfied with the initialization conditions
         # we let the algorithm do its magic by calling the maximize()
@@ -131,6 +157,7 @@ class App(object):
         # BO object for Expected Improvement
         print("--- Evaluating Bayesian Optimization using EI ---")
         bo_ei = BayesianOptimization(self.eval, pbounds)
+        bo_ei.initialize_df(points_df)
         bo_ei.maximize_mixed(self.dataset, init_points=self.train, n_iter=self.iterations, acq="ei")
         print(bo_ei.res['max'])
         print(bo_ei.res['all'])
@@ -138,6 +165,7 @@ class App(object):
         # BO object for Probability of Improvement
         print("--- Evaluating Bayesian Optimization using POI ---")
         bo_poi = BayesianOptimization(self.eval, pbounds)
+        bo_poi.initialize_df(points_df)
         bo_poi.maximize_mixed(self.dataset, init_points=self.train, n_iter=self.iterations, acq="poi")
         print(bo_poi.res['max'])
         print(bo_poi.res['all'])
@@ -145,9 +173,25 @@ class App(object):
         # BO object for Upper Confidence Bound
         print("--- Evaluating Bayesian Optimization using POI ---")
         bo_ucb = BayesianOptimization(self.eval, pbounds)
+        bo_ucb.initialize_df(points_df)
         bo_ucb.maximize_mixed(self.dataset, init_points=self.train, n_iter=self.iterations, acq="ucb", kappa=self.kappa)
         print(bo_ucb.res['max'])
         print(bo_ucb.res['all'])
+
+        # Combine the results into profiles
+        # profiles = {"mixed": bo_mixed.res['all']['values'],
+        #             "ei": bo_ei.res['all']['values'],
+        #             "poi": bo_poi.res['all']['values'],
+        #             "ucb": bo_ucb.res['all']['values']}
+
+        profiles_full = {"mixed": bo_mixed.res,
+                         "ei": bo_ei.res,
+                         "poi": bo_poi.res,
+                         "ucb": bo_ucb.res}
+
+        pickle.dump(profiles_full, open("profiles.p", "wb"))
+        print("Done pickling")
+        # self.plot_bos(profiles)
 
 if __name__ == "__main__":
     print(__doc__)
