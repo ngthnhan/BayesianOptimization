@@ -360,7 +360,7 @@ class BayesianOptimization(object):
             pwarning = False
             while np.any((self.X - x_max).sum(axis=1) == 0):
                 print("Repeated data. Sampling another one.")
-                x_max = self.dataset[np.random.choice(self.dataset.shape[0], 1), :]
+                x_max = self.dataset[np.random.choice(self.dataset.shape[0], 1), :][0]
 
                 pwarning = True
 

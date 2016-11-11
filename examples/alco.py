@@ -44,6 +44,8 @@ class App(object):
         # Prepare dataset placeholders
         self.dataset = None
         self.keys = None
+        self.X = None
+        self.y = None
 
         # Prepare a GP model to mimic the evaluation function
         self.gp = GaussianProcessRegressor(kernel=Matern(),
@@ -62,24 +64,26 @@ class App(object):
         # Load student alcohol consumption data
         df = pd.read_csv(self.data_src, sep=';')
         df.rename(columns={"G3": "target"}, inplace=True)
-        attrs += ['target']
-        df_small = df[attrs]
-        df_small.drop_duplicates(inplace=True)
+        full_attrs = attrs + ['target']
+        print("Full", full_attrs)
+        print("Attr", attrs)
+        df_selected = df[full_attrs]
+        df_selected.drop_duplicates(inplace=True)
 
         # Prepare dataset
-        self.dataset = df_small
+        self.dataset = df_selected[attrs]
         self.keys = sorted(self.dataset.columns.values)
-        self.keys.remove('target')
+
+        # Save data for GP model
+        self.X = np.asarray(df_selected[[*self.keys]].values)
+        self.y = np.asarray(df_selected['target'].values)
 
     def initialize_objective(self):
         """ Initialize objective function using a GP model. """
 
-        X = np.asarray(self.dataset[[*self.keys]].values)
-        y = np.asarray(self.dataset['target'].values)
+        ur = unique_rows(self.X)
 
-        ur = unique_rows(X)
-
-        self.gp.fit(X[ur], y[ur])
+        self.gp.fit(self.X[ur], self.y[ur])
 
     def run(self):
         # Bounds for chosen attributes
@@ -90,22 +94,44 @@ class App(object):
                    'Dalc': (0, 5),
                    'Walc': (0, 5)}
 
-        # Create a BO object
-        bo_mixed = BayesianOptimization(self.eval, pbounds)
-
         # Read data with the chosen attributes
         self.load_data(list(pbounds.keys()))
         self.initialize_objective()
 
+        # Create a BO object for mixed strategy
+        print("--- Evaluating Bayesian Optimization using Mixed strategy ---")
+        bo_mixed = BayesianOptimization(self.eval, pbounds)
+
         # Once we are satisfied with the initialization conditions
         # we let the algorithm do its magic by calling the maximize()
         # method.
-        # self, dataset=None, init_points=5, n_iter=25, acq="mixed", kappa=2.576, xi=0.0, eta=1.01, **gp_params
         bo_mixed.maximize_mixed(self.dataset, init_points=5, n_iter=5, kappa=3.29, eta=0.0005)
 
         # The output values can be accessed with self.res
         print(bo_mixed.res['max'])
         print(bo_mixed.res['all'])
+
+        # BO object for Expected Improvement
+        print("--- Evaluating Bayesian Optimization using EI ---")
+        bo_ei = BayesianOptimization(self.eval, pbounds)
+        bo_ei.maximize_mixed(self.dataset, init_points=5, n_iter=5, acq="ei")
+        print(bo_ei.res['max'])
+        print(bo_ei.res['all'])
+
+        # BO object for Probability of Improvement
+        print("--- Evaluating Bayesian Optimization using POI ---")
+        bo_poi = BayesianOptimization(self.eval, pbounds)
+        bo_poi.maximize_mixed(self.dataset, init_points=5, n_iter=5, acq="poi")
+        print(bo_poi.res['max'])
+        print(bo_poi.res['all'])
+
+        # BO object for Upper Confidence Bound
+        print("--- Evaluating Bayesian Optimization using POI ---")
+        bo_ucb = BayesianOptimization(self.eval, pbounds)
+        bo_ucb.maximize_mixed(self.dataset, init_points=5, n_iter=5, acq="ucb", kappa=3.29)
+        print(bo_ucb.res['max'])
+        print(bo_ucb.res['all'])
+
 
 if __name__ == "__main__":
     print(__doc__)
